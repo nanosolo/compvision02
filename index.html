@@ -283,7 +283,6 @@ pmremGenerator.compileEquirectangularShader();
 
 let envReady = false;
 let modelReady = false;
-let envMap = null;
 
 function checkAllReady() {
   if (envReady && modelReady) {
@@ -295,7 +294,7 @@ function checkAllReady() {
 new THREE.RGBELoader()
   .setDataType(THREE.UnsignedByteType)
   .load('https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_03_1k.hdr', function (texture) {
-    envMap = pmremGenerator.fromEquirectangular(texture).texture;
+    const envMap = pmremGenerator.fromEquirectangular(texture).texture;
     scene.environment = envMap;
     texture.dispose();
     pmremGenerator.dispose();
@@ -304,12 +303,7 @@ new THREE.RGBELoader()
     checkAllReady();
   });
 
-// --- 2. LOAD GLB MODEL ---
-// The model uses KHR_materials_pbrSpecularGlossiness extension.
-// Three.js r128 GLTFLoader doesn't support it out of the box,
-// so we manually convert the specular-glossiness workflow to
-// metallic-roughness after loading.
-
+// --- 2. LOAD GLB MODEL (converted to standard metallic-roughness PBR) ---
 let productModel = null;
 const pivotGroup = new THREE.Group();
 scene.add(pivotGroup);
@@ -318,35 +312,13 @@ const gltfLoader = new THREE.GLTFLoader();
 gltfLoader.load('aspirine.glb', function (gltf) {
   productModel = gltf.scene;
 
-  // Fix materials: convert spec-gloss to standard PBR
+  // Ensure correct texture encoding on all meshes
   productModel.traverse(function (child) {
-    if (child.isMesh) {
-      const oldMat = child.material;
-
-      // Build a new MeshStandardMaterial from whatever textures exist
-      const newMat = new THREE.MeshStandardMaterial({
-        // Use the existing map if the loader assigned one,
-        // otherwise try the diffuse map from extensions
-        map: oldMat.map || null,
-        roughness: 0.6,
-        metalness: 0.0,
-        envMap: envMap,
-        envMapIntensity: 1.0,
-        side: THREE.DoubleSide,
-      });
-
-      // If the old material has an emissiveMap or normalMap, carry them over
-      if (oldMat.normalMap) newMat.normalMap = oldMat.normalMap;
-      if (oldMat.aoMap) newMat.aoMap = oldMat.aoMap;
-      if (oldMat.emissiveMap) newMat.emissiveMap = oldMat.emissiveMap;
-
-      // Ensure correct texture encoding
-      if (newMat.map) {
-        newMat.map.encoding = THREE.sRGBEncoding;
-      }
-
-      child.material = newMat;
-      child.material.needsUpdate = true;
+    if (child.isMesh && child.material) {
+      const mat = child.material;
+      if (mat.map) mat.map.encoding = THREE.sRGBEncoding;
+      if (mat.emissiveMap) mat.emissiveMap.encoding = THREE.sRGBEncoding;
+      mat.needsUpdate = true;
     }
   });
 

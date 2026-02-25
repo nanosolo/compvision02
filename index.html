@@ -357,11 +357,11 @@ gltfLoader.load('aspirine.glb', function (gltf) {
   const scale = 3.0 / maxDim;
   productModel.scale.setScalar(scale);
 
-  // The model from Sketchfab/FBX may have Y-up already after we reset rotation,
-  // but if the bottle appears sideways we need to correct.
-  // The original node had rotation quaternion (-0.707, 0, 0, 0.707) = -90° around X
-  // which converts from Z-up (FBX) to Y-up (glTF). We need to apply this:
-  productModel.rotation.x = -Math.PI / 2;
+  // Fix orientation from Sketchfab/FBX export:
+  // +90° X to stand upright (was upside down with -90°)
+  productModel.rotation.x = Math.PI / 2;
+  // Rotate Y so the main "ASPIRIN" label faces the camera
+  productModel.rotation.y = Math.PI;
 
   pitchGroup.add(productModel);
 

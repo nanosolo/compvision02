@@ -357,11 +357,15 @@ gltfLoader.load('aspirine.glb', function (gltf) {
   const scale = 3.0 / maxDim;
   productModel.scale.setScalar(scale);
 
-  // Fix orientation from Sketchfab/FBX export:
-  // +90° X to stand upright (was upside down with -90°)
-  productModel.rotation.x = Math.PI / 2;
-  // Rotate Y so the main "ASPIRIN" label faces the camera
-  productModel.rotation.y = Math.PI;
+  // Fix orientation from Sketchfab/FBX export.
+  // The flattened model node had: scale=[100,100,100] rot=(-0.707,0,0,0.707)
+  // After we reset rotation/scale above, the raw mesh is in FBX Z-up space.
+  // We need: Z-up → Y-up = rotate +90° around X, then flip 180° around Y 
+  // to get label facing camera, then 180° around Z to flip upright.
+  productModel.rotation.order = 'YXZ';
+  productModel.rotation.x = -Math.PI / 2; // Z-up to Y-up
+  productModel.rotation.z = Math.PI;       // flip upright (cap on top)
+  productModel.rotation.y = 0;             // label faces camera
 
   pitchGroup.add(productModel);
 

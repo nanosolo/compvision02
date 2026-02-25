@@ -338,11 +338,7 @@ gltfLoader.load('aspirine.glb', function (gltf) {
     }
   });
 
-  // Reset any transforms baked into the root node from Sketchfab export
-  // The model node has rotation and scale from FBX conversion — we override it
-  productModel.rotation.set(0, 0, 0);
-  productModel.scale.set(1, 1, 1);
-  productModel.updateMatrixWorld(true);
+  // Let the model keep its baked orientation from the GLB
 
   // Now measure and center
   const box = new THREE.Box3().setFromObject(productModel);
@@ -357,15 +353,8 @@ gltfLoader.load('aspirine.glb', function (gltf) {
   const scale = 3.0 / maxDim;
   productModel.scale.setScalar(scale);
 
-  // Fix orientation from Sketchfab/FBX export.
-  // The flattened model node had: scale=[100,100,100] rot=(-0.707,0,0,0.707)
-  // After we reset rotation/scale above, the raw mesh is in FBX Z-up space.
-  // We need: Z-up → Y-up = rotate +90° around X, then flip 180° around Y 
-  // to get label facing camera, then 180° around Z to flip upright.
-  productModel.rotation.order = 'YXZ';
-  productModel.rotation.x = -Math.PI / 2; // Z-up to Y-up
-  productModel.rotation.z = Math.PI;       // flip upright (cap on top)
-  productModel.rotation.y = 0;             // label faces camera
+  // Orientation is baked into the GLB — no manual rotation needed
+  // Just recenter and scale
 
   pitchGroup.add(productModel);
 

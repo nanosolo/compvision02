@@ -303,16 +303,32 @@ new THREE.RGBELoader()
     checkAllReady();
   });
 
-// --- 2. LOAD GLB MODEL (converted to standard metallic-roughness PBR) ---
+// --- 2. ORBIT-STYLE ROTATION ---
+// We use a turntable approach:
+//   - yawGroup rotates around world Y (horizontal pinch → spin the bottle)
+//   - pitchGroup rotates around local X (vertical pinch → tilt up/down, clamped)
+// This prevents gimbal lock and chaotic rotation.
+
+const yawGroup = new THREE.Group();   // Y rotation (turntable)
+const pitchGroup = new THREE.Group(); // X rotation (tilt)
+scene.add(yawGroup);
+yawGroup.add(pitchGroup);
+
+// Target angles (smoothly interpolated)
+let targetYaw = 0;    // free, unlimited
+let targetPitch = 0.3; // start slightly tilted to show label nicely
+
+const PITCH_MIN = -0.6; // can't look too far under the bottom
+const PITCH_MAX = 1.2;  // can tilt to see the top/cap
+
+// --- 3. LOAD GLB MODEL ---
 let productModel = null;
-const pivotGroup = new THREE.Group();
-scene.add(pivotGroup);
 
 const gltfLoader = new THREE.GLTFLoader();
 gltfLoader.load('aspirine.glb', function (gltf) {
   productModel = gltf.scene;
 
-  // Ensure correct texture encoding on all meshes
+  // Ensure correct texture encoding
   productModel.traverse(function (child) {
     if (child.isMesh && child.material) {
       const mat = child.material;
@@ -322,18 +338,32 @@ gltfLoader.load('aspirine.glb', function (gltf) {
     }
   });
 
-  // Center the model
+  // Reset any transforms baked into the root node from Sketchfab export
+  // The model node has rotation and scale from FBX conversion — we override it
+  productModel.rotation.set(0, 0, 0);
+  productModel.scale.set(1, 1, 1);
+  productModel.updateMatrixWorld(true);
+
+  // Now measure and center
   const box = new THREE.Box3().setFromObject(productModel);
   const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+
+  // Shift so center of bounding box is at origin
   productModel.position.sub(center);
 
-  // Scale to fit nicely in view
-  const size = box.getSize(new THREE.Vector3());
+  // Scale to fit in view (target ~3 units tall)
   const maxDim = Math.max(size.x, size.y, size.z);
   const scale = 3.0 / maxDim;
   productModel.scale.setScalar(scale);
 
-  pivotGroup.add(productModel);
+  // The model from Sketchfab/FBX may have Y-up already after we reset rotation,
+  // but if the bottle appears sideways we need to correct.
+  // The original node had rotation quaternion (-0.707, 0, 0, 0.707) = -90° around X
+  // which converts from Z-up (FBX) to Y-up (glTF). We need to apply this:
+  productModel.rotation.x = -Math.PI / 2;
+
+  pitchGroup.add(productModel);
 
   modelReady = true;
   checkAllReady();
@@ -347,10 +377,7 @@ gltfLoader.load('aspirine.glb', function (gltf) {
   statusText.textContent = 'Failed to load 3D model.';
 });
 
-let targetRotationX = 0;
-let targetRotationY = 0;
-
-// --- 3. HAND SKELETON ---
+// --- 4. HAND SKELETON ---
 const handJoints = [];
 const jointGeometry = new THREE.SphereGeometry(0.05, 16, 16);
 const jointMaterial = new THREE.MeshStandardMaterial({ color: 0x3dffc2, roughness: 0.3, metalness: 0.2, emissive: 0x0a5e42 });
@@ -367,16 +394,19 @@ lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3
 const handLines = new THREE.LineSegments(lineGeometry, lineMaterial);
 scene.add(handLines); handLines.visible = false;
 
-// --- 4. ANIMATION LOOP ---
+// --- 5. ANIMATION LOOP ---
 function animate() {
   requestAnimationFrame(animate);
-  pivotGroup.rotation.y += (targetRotationY - pivotGroup.rotation.y) * 0.1;
-  pivotGroup.rotation.x += (targetRotationX - pivotGroup.rotation.x) * 0.1;
+  
+  // Smooth interpolation toward target
+  yawGroup.rotation.y += (targetYaw - yawGroup.rotation.y) * 0.1;
+  pitchGroup.rotation.x += (targetPitch - pitchGroup.rotation.x) * 0.1;
+  
   renderer.render(scene, camera3D);
 }
 animate();
 
-// --- 5. MEDIAPIPE HAND TRACKING ---
+// --- 6. MEDIAPIPE HAND TRACKING ---
 let isGrabbed = false;
 let lastPinchX = 0;
 let lastPinchY = 0;
@@ -415,13 +445,22 @@ function onResults(results) {
 
     if (distance < 0.06) {
       if (!isGrabbed) {
-        isGrabbed = true; lastPinchX = pinchX; lastPinchY = pinchY;
+        isGrabbed = true;
+        lastPinchX = pinchX;
+        lastPinchY = pinchY;
       } else {
         const deltaX = pinchX - lastPinchX;
         const deltaY = pinchY - lastPinchY;
-        targetRotationY -= deltaX * 12;
-        targetRotationX += deltaY * 12;
-        lastPinchX = pinchX; lastPinchY = pinchY;
+
+        // Horizontal pinch movement → Y rotation (turntable spin, free)
+        targetYaw -= deltaX * 10;
+
+        // Vertical pinch movement → X tilt (clamped)
+        targetPitch += deltaY * 6;
+        targetPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, targetPitch));
+
+        lastPinchX = pinchX;
+        lastPinchY = pinchY;
       }
     } else {
       isGrabbed = false;
